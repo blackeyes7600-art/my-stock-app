@@ -1,13 +1,21 @@
 import streamlit as st
 import requests
 import pandas as pd
-import plotly.express as px  # 예쁜 그래프를 그려주는 도구
+import plotly.express as px
+from PIL import Image  # 이미지를 다루기 위한 도구 추가
 
-# 1. 페이지 설정 (화면을 넓게 씁니다)
+# 1. 이미지 파일 불러오기 (파일명: icon.png)
+# 파일이 app.py와 같은 폴더에 있어야 합니다!
+try:
+    icon_image = Image.open("icon.png")
+except:
+    icon_image = "💰"  # 혹시 이미지를 못 찾으면 대신 보여줄 기본 아이콘
+
+# 2. 페이지 설정 (아이콘 적용)
 st.set_page_config(
-    page_title="내 미국 주식 포트폴리오", 
-    page_icon="🗽", 
-    layout="wide" 
+    page_title="내 미국 주식 포트폴리오",
+    page_icon=icon_image, 
+    layout="wide"
 )
 
 st.title("🗽 내 미국 주식 대시보드")
