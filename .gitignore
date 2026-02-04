@@ -1,0 +1,5 @@
+# 가상환경 폴더 무시
+venv/
+
+# 비밀 금고 무시 (절대 업로드 금지)
+.streamlit/secrets.toml
