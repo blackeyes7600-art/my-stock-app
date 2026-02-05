@@ -14,8 +14,9 @@ except:
 # 2. 페이지 설정 (아이콘 적용)
 st.set_page_config(
     page_title="내 미국 주식 포트폴리오",
-    page_icon=icon_image, 
-    layout="wide"
+    page_icon=icon_image, # 여기서 불러온 이미지가 홈 화면 아이콘으로 쓰입니다.
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
 st.title("🗽 내 미국 주식 대시보드")
