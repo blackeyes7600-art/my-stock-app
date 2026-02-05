@@ -25,12 +25,23 @@ def get_exchange_rate():
         return res.json()['rates']['KRW']
     except: return 1450.0 # 실패 시 최근 환율 근사치
 
+# 수정된 토큰 발급 함수 (캐시 기능 추가)
+@st.cache_data(ttl=3600) # 1시간 동안은 받은 열쇠를 기억합니다 (서버 요청 안 함)
 def get_access_token():
     auth = st.secrets["auth"]
     headers = {"content-type": "application/json"}
     body = {"grant_type": "client_credentials", "appkey": auth["APP_KEY"], "appsecret": auth["APP_SECRET"]}
+    
+    # 토큰 요청
     res = requests.post(f"{auth['URL_BASE']}/oauth2/tokenP", headers=headers, json=body)
-    return res.json().get("access_token")
+    data = res.json()
+    
+    # 토큰 발급 실패 시 에러 출력 (디버깅용)
+    if "access_token" not in data:
+        st.error(f"토큰 발급 실패: {data}")
+        return None
+        
+    return data["access_token"]
 
 def fetch_balance(token):
     auth = st.secrets["auth"]
