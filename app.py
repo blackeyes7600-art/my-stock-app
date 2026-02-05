@@ -141,5 +141,12 @@ if data.get('rt_cd') == '0':
     fig_pie.update_traces(textinfo='percent+label')
     st.plotly_chart(fig_pie, use_container_width=True)
 
+# app.py 맨 하단 수정
 else:
-    st.error("데이터 로드 실패")
+    # 어떤 에러인지 상세하게 출력합니다.
+    error_msg = data.get('msg1', '알 수 없는 에러')
+    st.error(f"❌ 데이터 로드 실패: {error_msg}")
+    
+    # 개발자 모드: 서버에서 받은 전체 응답을 보여줍니다. (범인 검거용)
+    with st.expander("상세 에러 로그 보기"):
+        st.write(data)
