@@ -2,155 +2,142 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.express as px
-from PIL import Image  # 이미지를 다루기 위한 도구 추가
+from datetime import datetime
+import time
 
-# 1. 이미지 파일 불러오기 (파일명: icon.png)
-# 파일이 app.py와 같은 폴더에 있어야 합니다!
-try:
-    icon_image = Image.open("icon.png")
-except:
-    icon_image = "💰"  # 혹시 이미지를 못 찾으면 대신 보여줄 기본 아이콘
-
-# 2. 페이지 설정 (아이콘 적용)
+# 1. 페이지 설정
 st.set_page_config(
-    page_title="내 미국 주식 포트폴리오",
-    page_icon=icon_image, # 여기서 불러온 이미지가 홈 화면 아이콘으로 쓰입니다.
-    layout="wide",
-    initial_sidebar_state="collapsed"
+    page_title="Premium 미국 주식 인텔리전스",
+    page_icon="📈",
+    layout="wide"
 )
 
-st.title("🗽 내 미국 주식 대시보드")
+# 가독성을 위한 커스텀 스타일(폰트 및 간격)
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;700&display=swap');
+    html, body, [class*="css"] { font-family: 'Pretendard', sans-serif; }
+    .stMetric { background-color: #f8f9fa; padding: 15px; border-radius: 10px; border: 1px solid #eee; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# 2. 금고에서 키 꺼내기
+# 2. 보안 키 및 환경 설정
 try:
-    key = st.secrets["auth"]["APP_KEY"]
-    secret = st.secrets["auth"]["APP_SECRET"]
-    url = st.secrets["auth"]["URL_BASE"]
-    cano = st.secrets["auth"]["CANO"]
-    acnt_prdt_cd = st.secrets["auth"]["ACNT_PRDT_CD"]
+    auth = st.secrets["auth"]
+    APP_KEY = auth["APP_KEY"]
+    APP_SECRET = auth["APP_SECRET"]
+    URL_BASE = auth["URL_BASE"]
+    CANO = auth["CANO"]
+    ACNT_PRDT_CD = auth["ACNT_PRDT_CD"]
 except Exception:
-    st.error("secrets.toml 파일을 찾을 수 없습니다.")
+    st.error("Secrets 설정이 필요합니다.")
     st.stop()
 
-# 3. 토큰 발급 함수
+# 3. 필수 함수 정의
+@st.cache_data(ttl=3600) # 환율은 1시간마다 갱신
+def get_exchange_rate():
+    try:
+        res = requests.get("https://open.er-api.com/v6/latest/USD")
+        return res.json()['rates']['KRW']
+    except:
+        return 1350.0  # 실패 시 기본값
+
 def get_access_token():
     headers = {"content-type": "application/json"}
-    body = {"grant_type": "client_credentials", "appkey": key, "appsecret": secret}
-    res = requests.post(f"{url}/oauth2/tokenP", headers=headers, json=body)
+    body = {"grant_type": "client_credentials", "appkey": APP_KEY, "appsecret": APP_SECRET}
+    res = requests.post(f"{URL_BASE}/oauth2/tokenP", headers=headers, json=body)
     return res.json().get("access_token")
 
-# 4. 메인 기능 시작
-if st.button("내 자산 분석하기 🔄", type="primary"):
-    with st.spinner("미국 주식 정보를 가져오는 중입니다..."):
-        token = get_access_token()
-        if not token:
-            st.stop()
+# 4. 데이터 로드 (버튼 없이 자동 실행)
+token = get_access_token()
+exch_rate = get_exchange_rate()
 
-        try:
-            # API 요청 설정
-            headers = {
-                "content-type": "application/json",
-                "authorization": f"Bearer {token}",
-                "appkey": key,
-                "appsecret": secret,
-                "tr_id": "JTTT3012R"
-            }
-            params = {
-                "CANO": cano,
-                "ACNT_PRDT_CD": acnt_prdt_cd,
-                "OVRS_EXCG_CD": "NASD",
-                "TR_CRCY_CD": "USD",
-                "CTX_AREA_FK200": "",
-                "CTX_AREA_NK200": ""
-            }
+def fetch_balance():
+    headers = {
+        "content-type": "application/json", "authorization": f"Bearer {token}",
+        "appkey": APP_KEY, "appsecret": APP_SECRET, "tr_id": "JTTT3012R"
+    }
+    params = {
+        "CANO": CANO, "ACNT_PRDT_CD": ACNT_PRDT_CD,
+        "OVRS_EXCG_CD": "NASD", "TR_CRCY_CD": "USD",
+        "CTX_AREA_FK200": "", "CTX_AREA_NK200": ""
+    }
+    res = requests.get(f"{URL_BASE}/uapi/overseas-stock/v1/trading/inquire-balance", headers=headers, params=params)
+    return res.json()
 
-            res = requests.get(f"{url}/uapi/overseas-stock/v1/trading/inquire-balance", headers=headers, params=params)
-            data = res.json()
+data = fetch_balance()
 
-            if res.status_code == 200 and data['rt_cd'] == '0':
-                output1 = data['output1'] # 종목 리스트
-                output2 = data['output2'] # 계좌 총 자산 정보
+# 5. 메인 UI 레이아웃
+st.title("🚀 미국 주식 포트폴리오 매니저")
+st.caption(f"최근 업데이트: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (실시간 환율: ₩{exch_rate:,.2f})")
 
-                # --- [섹션 1] 상단 요약 정보 ---
-                total_usd = float(output2['tot_evlu_pfls_amt']) # 총 평가금액 (달러)
-                total_profit = float(output2['ovrs_tot_pfls'])   # 총 손익금 (달러)
-                
-                # 수익률 계산 (손익금 / (총평가 - 손익금) * 100) -> 근사치 계산
-                # API가 주는 수익률이 있으면 그걸 쓰는 게 좋습니다. 여기선 output2에 수익률 필드가 없어서 직접 계산하거나 생략
-                # 안전하게 평가 금액만 먼저 보여줍니다.
-                
-                # 화면을 2칸으로 나눠서 큼지막하게 보여주기
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric(label="💰 총 자산 (달러)", value=f"${total_usd:,.2f}")
-                with col2:
-                    # 수익이면 초록(Green), 손실이면 빨강(Red) - 미국 스타일
-                    st.metric(
-                        label="📊 총 손익금", 
-                        value=f"${total_profit:,.2f}", 
-                        delta=f"{total_profit:,.2f}"
-                    )
+if data.get('rt_cd') == '0':
+    output1 = data['output1']
+    output2 = data['output2']
+    
+    # 상단 요약 정보 (달러 & 원화 병기)
+    total_usd = float(output2['tot_evlu_pfls_amt'])
+    total_krw = total_usd * exch_rate
+    total_profit_usd = float(output2['ovrs_tot_pfls'])
+    
+    m1, m2, m3 = st.columns(3)
+    m1.metric("총 자산 (USD)", f"${total_usd:,.2f}")
+    m2.metric("총 자산 (KRW)", f"₩{int(total_krw):,}")
+    m3.metric("총 손익", f"${total_profit_usd:,.2f}", delta=f"{total_profit_usd:,.2f}")
 
-                st.divider() # 가로줄 긋기
+    tab1, tab2 = st.tabs(["📊 내 보유 주식", "⭐ 관심 및 매도 종목"])
 
-                # --- [섹션 2] 그래프와 표 ---
-                if output1:
-                    df = pd.DataFrame(output1)
-                    
-                    # 데이터를 숫자로 변환 (문자로 오기 때문에 계산을 위해 변환 필수)
-                    df['평가금액'] = df['ovrs_stck_evlu_amt'].astype(float)
-                    df['수량'] = df['ovrs_cblc_qty'].astype(float)
-                    df['수익률'] = df['evlu_pfls_rt'].astype(float)
-                    df['현재가'] = df['now_pric2'].astype(float)
-                    df['매입가'] = df['pchs_avg_pric'].astype(float)
-                    df['종목명'] = df['ovrs_item_name'] # 한글 종목명
-                    df['티커'] = df['ovrs_pdno']       # 티커 (TSLA 등)
-
-                    # 화면 나누기 (왼쪽: 차트 / 오른쪽: 상세 표)
-                    chart_col, table_col = st.columns([1, 1.5]) 
-
-                    with chart_col:
-                        st.subheader("🍰 자산 비중 (Top 5)")
-                        # 평가금액 기준 상위 5개만 추리기 (나머지는 기타 처리하면 좋지만 일단 간단하게)
-                        fig = px.pie(
-                            df, 
-                            values='평가금액', 
-                            names='종목명', 
-                            hole=0.4, # 도넛 모양
-                            color_discrete_sequence=px.colors.qualitative.Pastel
-                        )
-                        # 차트 안에 글씨 넣기
-                        fig.update_traces(textposition='inside', textinfo='percent+label')
-                        fig.update_layout(showlegend=False) # 범례 숨기기 (깔끔하게)
-                        st.plotly_chart(fig, use_container_width=True)
-
-                    with table_col:
-                        st.subheader("📋 보유 종목 상세")
+    with tab1:
+        if output1:
+            df = pd.DataFrame(output1)
+            # 데이터 전처리
+            df['평가금액'] = df['ovrs_stck_evlu_amt'].astype(float)
+            df['수수료'] = df['ovrs_stck_evlu_amt'].astype(float) * 0.002 # 예시 수수료
+            
+            col_chart, col_list = st.columns([1.5, 2])
+            
+            with col_list:
+                st.subheader("보유 종목 상세")
+                # 종목 클릭 시 팝업(Expander)으로 상세 정보 및 그래프 표현
+                for i, row in df.iterrows():
+                    with st.expander(f"{row['ovrs_item_name']} ({row['ovrs_pdno']}) | 수익률: {row['evlu_pfls_rt']}%"):
+                        c1, c2 = st.columns(2)
+                        c1.write(f"**현재가:** ${row['now_pric2']}")
+                        c1.write(f"**매입가:** ${row['pchs_avg_pric']}")
                         
-                        # 표에 보여줄 데이터만 깔끔하게 정리
-                        display_df = df[['티커', '종목명', '수량', '매입가', '현재가', '수익률', '평가금액']]
+                        # 가상의 적정가/목표가 입력 (추후 DB 연동 가능)
+                        target_price = st.number_input(f"{row['ovrs_pdno']} 목표가", value=float(row['now_pric2'])*1.2, key=f"t_{i}")
+                        fair_price = st.number_input(f"{row['ovrs_pdno']} 적정가", value=float(row['now_pric2'])*1.1, key=f"f_{i}")
                         
-                        # Streamlit의 최신 기능으로 표 꾸미기
-                        st.dataframe(
-                            display_df,
-                            column_config={
-                                "평가금액": st.column_config.NumberColumn(format="$%.2f"),
-                                "현재가": st.column_config.NumberColumn(format="$%.2f"),
-                                "매입가": st.column_config.NumberColumn(format="$%.2f"),
-                                "수익률": st.column_config.NumberColumn(
-                                    format="%.2f%%",
-                                ),
-                            },
-                            hide_index=True, # 0, 1, 2... 번호 숨기기
-                            use_container_width=True,
-                            height=500
-                        )
+                        diff = float(row['now_pric2']) - fair_price
+                        st.info(f"적정가 대비 현재가 차이: **${diff:.2f}**")
+                        
+                        if float(row['now_pric2']) >= target_price:
+                            st.success("🎯 목표가 도달! 매도를 검토하세요.")
+                        
+                        # 종목별 가상 차트 (Plotly)
+                        chart_data = pd.DataFrame({'날짜': pd.date_range(end=datetime.now(), periods=10), '주가': [float(row['now_pric2']) * (1 + (x-5)*0.01) for x in range(10)]})
+                        fig_stock = px.line(chart_data, x='날짜', y='주가', title=f"{row['ovrs_item_name']} 주가 추이")
+                        st.plotly_chart(fig_stock, use_container_width=True)
 
-                st.success("대시보드 업데이트 완료! 멋진 포트폴리오네요! 🎉")
+            with col_chart:
+                st.subheader("섹터/종목 비중")
+                fig_pie = px.pie(df, values='평가금액', names='ovrs_item_name', hole=0.5, color_discrete_sequence=px.colors.qualitative.Safe)
+                st.plotly_chart(fig_pie, use_container_width=True)
 
-            else:
-                st.error("데이터 조회 실패")
-                st.write(data['msg1'])
+    with tab2:
+        st.subheader("관심 종목 및 매도 완료 리스트")
+        # 관심 종목 검색 및 추가 UI (예시)
+        search_ticker = st.text_input("관심 종목 티커 입력 (예: NVDA, TSLA)")
+        if search_ticker:
+            st.write(f"🔍 {search_ticker} 정보 조회 중...")
+            # 여기서 실제 API로 관심종목 시세를 가져오는 로직 추가 가능
+        
+        st.info("이전에 전량 매도한 주식 목록이 여기에 표시됩니다. (기능 구현 중)")
 
-        except Exception as e:
-            st.error(f"에러 발생: {e}")
+else:
+    st.warning("데이터를 불러올 수 없습니다. API 연결을 확인하세요.")
+
+# 주기적 자동 새로고침 (60초마다)
+# time.sleep(60)
+# st.rerun()
